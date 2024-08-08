@@ -2,7 +2,7 @@
 title: "Deep-amplicon sequencing of the complete beta tubulin gene in T. trichiura"
 author: "Javier Gandaseggui"
 date: '08/08/2024'
-raw data: SRA BioProject ID: PRJNA1145892
+raw data: SRA BioProject ID PRJNA1145892
 output file: md document
 ---
 
