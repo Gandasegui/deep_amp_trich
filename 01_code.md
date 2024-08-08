@@ -1,9 +1,9 @@
 ---
 title: "Deep-amplicon sequencing of the complete beta tubulin gene in T. trichiura"
-author: "Javier Gandaseggui"
+author: "Javier Gandasegui"
 date: '08/08/2024'
 raw data: SRA BioProject ID PRJNA1145892
-output file: md document
+output file: md
 ---
 
 # Main code
@@ -570,25 +570,10 @@ mean(pair_post_ct$ct_tt)
 range(pair_post_ct$ct_tt)
 ```
 
+## Now, the impact of the variants in the proteis is assessed
+### Let's get first the vcf file
 
-################################################################################
-
-
-################################################################################################################################################################
-
-
-
-
-
-
-
-
-
-
-
-
-################################################################################################################################################################
-
+```bash
 #Let's call the variants using genotypes as previously done
 #working environment
 WORKING_DIR=/lustre/scratch125/pam/teams/team333/jg34/DEEP_AMP_TRI
@@ -673,108 +658,11 @@ vcftools \
 --recode \
 --recode-INFO-all \
 --out deep_amp_tri_genome.filtered
+```
 
-################################################################################################################################################################
+## And now we run SnpEff
 
-
-
-#############
-
-#Let's generate a plot with the beta tubuline variations obserned and per-site diversity
-mkdir ${WORKING_DIR}/05_DIV
-cd ${WORKING_DIR}/05_DIV
-VCF=${WORKING_DIR}/04_VARIANTS/deep_amp_tri_genome.filtered.noInDels.recode.vcf
-module load vcftools/0.1.16-c4
-
-################################################################################################################################################################
-
-
-
-#Let's see what is going on with the second beta tub
-mkdir ${WORKING_DIR}/06_BETA_2
-cd ${WORKING_DIR}/06_BETA_2
-
-#Copying Steve nivlear vcf of trichuris
-cp /lustre/scratch125/pam/teams/team333/sd21/trichuris_trichiura/04_VARIANTS/GATK_HC_MERGED/Trichuris_trichiura.cohort.nuclear_variants.final.recode.vcf.gz .
-cp /lustre/scratch125/pam/teams/team333/sd21/trichuris_trichiura/04_VARIANTS/GATK_HC_MERGED/mod_human_samples.list .
-
-#Now, we have to figure out the position of the other beta tub, as well as the exosn and introns
-module load mummer4/4.0.0rc1
-module load samtools
-module load bedtools/2.31.0--hf5e1c6e_3
-
-#A TBLASTN in worm base parasite showed the other isotype named TTRE8258
-#Download it and generate the file gen.fa
-
-nucmer -c 100 -p beta_2 ${WORKING_DIR}/01_REF/trichuris_trichiura.renamed.fa gen.fa
-show-coords -r -c -l beta_2.delta > beta_2.coords
-cat beta_2.coords
-
-"NUCMER
-
-    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
-===============================================================================================================================
-27478327 27481371  |        1     3045  |     3045     3045  |   100.00  | 29164577     3045  |     0.01   100.00  | 102_trichuris_trichiura    TTRE_chr2"
-
-#It is in scaffold 102
-samtools faidx ${WORKING_DIR}/01_REF/trichuris_trichiura.renamed.fa 102_trichuris_trichiura > 102_trichuris_trichiura.fa
-
-#Form WBP we also download the information of the exons and name the file as exon.fa
-nucmer -c 100 -p beta_tub_2_exons 102_trichuris_trichiura.fa exon.fa
-show-coords -r -c -l beta_tub_2_exons.delta > beta_tub_2_exons.coords
-cat beta_tub_2_exons.coords
-
-"NUCMER
-
-    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
-===============================================================================================================================
-27478377 27478487  |        1      111  |      111      111  |   100.00  | 29164577      111  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
-27478650 27478869  |        1      220  |      220      220  |   100.00  | 29164577      220  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
-27478923 27479167  |        1      245  |      245      245  |   100.00  | 29164577      245  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
-27479219 27479525  |        1      307  |      307      307  |   100.00  | 29164577      307  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
-27479572 27479717  |        1      146  |      146      146  |   100.00  | 29164577      146  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
-27480871 27481057  |        1      187  |      187      187  |   100.00  | 29164577      187  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
-27481108 27481321  |        1      214  |      214      214  |   100.00  | 29164577      214  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1"
-
-#Now, we conver this to bed format
-awk -F '|' '!/^=/{gsub(/^[ \t]+|[ \t]+$/, "", $0); split($1, coords, " +"); split($15, tags, " +"); print tags[1] "\t" coords[1] "\t" coords[2] "\t" tags[2] "\t0\t+"}' beta_tub_2_exons.coords > beta_tub_2_exons.bed
-#And some brief modification in nano
-#Now we use that file to obtain the introns
-samtools faidx 102_trichuris_trichiura.fa
-cut -f 1,2 102_trichuris_trichiura.fa.fai > 102_trichuris_trichiura.genome.bed
-bedtools complement -i beta_tub_2_exons.bed -g 102_trichuris_trichiura.genome.bed > beta_tub_2_introns.bed
-
-#Let's select the infor using Steve scripts
-module load vcftools/0.1.16-c4
-
-#I have to change the chr names
-#in the vcf file is: Trichuris_trichiura_2_001,length=29164577,assembly=trichuris_trichiura.fa
-sed '/^102_trichuris_trichiura/s/^/Trichuris_trichiura_2_001,length=29164577,assembly=trichuris_trichiura.fa/' beta_tub_2_gen.bed > beta_tub_2_gen.renamed.bed
-
-vcftools \
-      --gzvcf Trichuris_trichiura.cohort.nuclear_variants.final.recode.vcf \
-      --bed beta_tub_2_gen.renamed.bed \
-      --site-pi \
-      --keep mod_human_samples.list \
-      --maf 0.01 \
-      --out BZ_nuc_div
-
-#> After filtering, kept 30 out of 61 Individuals
-#> After filtering, kept 205 out of a possible 6933531 Sites
-
-vcftools \
-      --gzvcf Trichuris_trichiura.cohort.nuclear_variants.final.recode.vcf \
-      --bed beta_tub_2_gen.renamed.bed \
-      --freq \
-      --keep mod_human_samples.list \
-      --maf 0.01 \
-      --out BZ_allele_freq
-#> After filtering, kept 30 out of 61 Individuals
-#> After filtering, kept 205 out of a possible 6933531 Sites
-
-
-################################################################################################################################################################
-
+```bash
 #SNPeff
 mkdir ${WORKING_DIR}/07_SNPeff
 module load vcftools/0.1.16-c4
@@ -882,10 +770,210 @@ snpEff -v -onlyProtein trichuris grenedalf_snps_10.renamed.vcf > grenedalf_snps_
 #And run
 snpEff -v -onlyTr my_transcripts.txt trichuris grenedalf_snps_10.renamed.vcf > grenedalf_snps_10.ann.trans.vcf
 #same result, still don't know the meaning
+```
+### Now, Table S3 is generatet 
+
+```
+#Let's generate table S3 with the SNPeff info
+#Let's add intron exon info for all SNPs, just in case
+df_freqs <- select(freq_pre_post_all, pre_freq_mean, post_freq_mean)
+
+df_freqs <- as_tibble(sapply(df_freqs, function(x) if(is.numeric(x)) 1-x else ""))
+df_freqs <- as_tibble(sapply(df_freqs, function(x) if(is.numeric(x)) round(x, digits = 3) else ""))
+df_freqs <- cbind(select(per_samplefrequency, POS, REF, ALT), df_freqs)
+df_freqs$POS <- as.numeric(df_freqs$POS)
+
+df_freqs$gen[df_freqs$POS <= 10684167] <- 'Intron'
+df_freqs$gen[df_freqs$POS >= 10684168 & df_freqs$POS <= 10684696] <- "Exon"
+df_freqs$gen[df_freqs$POS >= 10684697 & df_freqs$POS <= 10684751] <- "Intron"  
+df_freqs$gen[df_freqs$POS >= 10684752 & df_freqs$POS <= 10684937] <- "Exon"  
+df_freqs$gen[df_freqs$POS >= 10684938 & df_freqs$POS <= 10684987] <- "Intron"  
+df_freqs$gen[df_freqs$POS >= 10684988 & df_freqs$POS <= 10685436] <- "Exon"  
+df_freqs$gen[df_freqs$POS >= 10685437 & df_freqs$POS <= 10685483] <- "Intron"  
+df_freqs$gen[df_freqs$POS >= 10685484 & df_freqs$POS <= 10685727] <- "Exon"  
+df_freqs$gen[df_freqs$POS >= 10685728 & df_freqs$POS <= 10685780] <- "Intron"
+df_freqs$gen[df_freqs$POS >= 10685781 & df_freqs$POS <= 10685999] <- "Exon" 
+df_freqs$gen[df_freqs$POS >= 10686000 & df_freqs$POS <= 10686294] <- "Intron" 
+df_freqs$gen[df_freqs$POS >= 10686295 & df_freqs$POS <= 10686647] <- "Exon"
+df_freqs$gen[df_freqs$POS >= 10686648] <- 'Intron'
+
+#Let's do a bed file with gernedalf variants
+vcf_grenedalf <- read_table('grenedalf_snps_10.txt')
+vcf_grenedalf$POS
+vcf_grenedalf <- cbind(vcf_grenedalf, vcf_grenedalf$POS)
+colnames(vcf_grenedalf) <- c('CHR', 'start', 'end')
+write_delim(vcf_grenedalf, 'grenedalf_snps_10.bed', delim = '\tab')
+
+vcf <- read.vcfR("grenedalf_snps_10_prot.ann.vcf", verbose = FALSE)
+Rscript ./Parse_SnpEff.r grenedalf_snps_10.ann.trans.vcf snpeff.trans.csv 
+snpeff <- read_csv("snpeff.trans.csv")
+
+right_join(select(per_samplefrequency, POS, REF, ALT), vcf_grenedalf, by = c('POS' = 'start')) %>%
+  select(POS, REF, ALT) %>%
+  left_join(., select(df_freqs, POS, gen), by = 'POS') %>%
+  left_join(., select(snpeff, POS, REF, ALT, effect, impact, gene, mut_cdna, mut_aa), by = 'POS') %>%
+write.csv('Table_S3.csv') # then is sligly modify for publication
+```
+
+## Let's analyse the second beta tubulin
+### First, we fin dthe location of the second isotype in the reference genome
+
+```bash
+#Let's see what is going on with the second beta tub
+mkdir ${WORKING_DIR}/06_BETA_2
+cd ${WORKING_DIR}/06_BETA_2
+
+#Copying Steve nuclear vcf of trichuris (see https://github.com/stephenrdoyle/ancient_trichuris/)
+cp /lustre/scratch125/pam/teams/team333/sd21/trichuris_trichiura/04_VARIANTS/GATK_HC_MERGED/Trichuris_trichiura.cohort.nuclear_variants.final.recode.vcf.gz .
+cp /lustre/scratch125/pam/teams/team333/sd21/trichuris_trichiura/04_VARIANTS/GATK_HC_MERGED/mod_human_samples.list .
+
+#Now, we have to figure out the position of the other beta tub, as well as the exosn and introns
+module load mummer4/4.0.0rc1
+module load samtools
+module load bedtools/2.31.0--hf5e1c6e_3
+
+#A TBLASTN in worm base parasite showed the other isotype named TTRE8258
+#Download it and generate the file gen.fa
+
+nucmer -c 100 -p beta_2 ${WORKING_DIR}/01_REF/trichuris_trichiura.renamed.fa gen.fa
+show-coords -r -c -l beta_2.delta > beta_2.coords
+cat beta_2.coords
+
+"NUCMER
+
+    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
+===============================================================================================================================
+27478327 27481371  |        1     3045  |     3045     3045  |   100.00  | 29164577     3045  |     0.01   100.00  | 102_trichuris_trichiura    TTRE_chr2"
+
+#It is in scaffold 102
+samtools faidx ${WORKING_DIR}/01_REF/trichuris_trichiura.renamed.fa 102_trichuris_trichiura > 102_trichuris_trichiura.fa
+
+#Form WBP we also download the information of the exons and name the file as exon.fa
+nucmer -c 100 -p beta_tub_2_exons 102_trichuris_trichiura.fa exon.fa
+show-coords -r -c -l beta_tub_2_exons.delta > beta_tub_2_exons.coords
+cat beta_tub_2_exons.coords
+
+"NUCMER
+
+    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
+===============================================================================================================================
+27478377 27478487  |        1      111  |      111      111  |   100.00  | 29164577      111  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
+27478650 27478869  |        1      220  |      220      220  |   100.00  | 29164577      220  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
+27478923 27479167  |        1      245  |      245      245  |   100.00  | 29164577      245  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
+27479219 27479525  |        1      307  |      307      307  |   100.00  | 29164577      307  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
+27479572 27479717  |        1      146  |      146      146  |   100.00  | 29164577      146  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
+27480871 27481057  |        1      187  |      187      187  |   100.00  | 29164577      187  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1
+27481108 27481321  |        1      214  |      214      214  |   100.00  | 29164577      214  |     0.00   100.00  | 102_trichuris_trichiura    TTRE8258_t1"
+
+#Now, we conver this to bed format
+awk -F '|' '!/^=/{gsub(/^[ \t]+|[ \t]+$/, "", $0); split($1, coords, " +"); split($15, tags, " +"); print tags[1] "\t" coords[1] "\t" coords[2] "\t" tags[2] "\t0\t+"}' beta_tub_2_exons.coords > beta_tub_2_exons.bed
+#And some brief modification in nano
+#Now we use that file to obtain the introns
+samtools faidx 102_trichuris_trichiura.fa
+cut -f 1,2 102_trichuris_trichiura.fa.fai > 102_trichuris_trichiura.genome.bed
+bedtools complement -i beta_tub_2_exons.bed -g 102_trichuris_trichiura.genome.bed > beta_tub_2_introns.bed
+
+#Let's select the infor using Steve scripts
+module load vcftools/0.1.16-c4
+
+#I have to change the chr names
+#in the vcf file is: Trichuris_trichiura_2_001,length=29164577,assembly=trichuris_trichiura.fa
+sed '/^102_trichuris_trichiura/s/^/Trichuris_trichiura_2_001,length=29164577,assembly=trichuris_trichiura.fa/' beta_tub_2_gen.bed > beta_tub_2_gen.renamed.bed
+
+vcftools \
+      --gzvcf Trichuris_trichiura.cohort.nuclear_variants.final.recode.vcf \
+      --bed beta_tub_2_gen.renamed.bed \
+      --site-pi \
+      --keep mod_human_samples.list \
+      --maf 0.01 \
+      --out BZ_nuc_div
+
+#> After filtering, kept 30 out of 61 Individuals
+#> After filtering, kept 205 out of a possible 6933531 Sites
+
+vcftools \
+      --gzvcf Trichuris_trichiura.cohort.nuclear_variants.final.recode.vcf \
+      --bed beta_tub_2_gen.renamed.bed \
+      --freq \
+      --keep mod_human_samples.list \
+      --maf 0.01 \
+      --out BZ_allele_freq
+#> After filtering, kept 30 out of 61 Individuals
+#> After filtering, kept 205 out of a possible 6933531 Sites
+```
+
+### And now is R the the informaiton is visuallised
+
+```R
+# the location and gene data is loaded
+exons <- read.table("beta_tub_2/beta_tub_2_exons.bed", header=T)
+introns <- read.table("beta_tub_2/beta_tub_2_introns.bed", header=T)
+nuc <- read.table("beta_tub_2/BZ_nuc_div.sites.pi", header=T)
+
+resistant_snps <- read.table("beta_tub_2/res_snps_location.txt",header=T)
+
+allele_freq <- read.table("beta_tub_2/BZ_allele_freq.frq", header=F, sep="\t", skip=1)
+colnames(allele_freq) <- c("chrom", "POS", "alleles", "total_alleles", "REF", "VAR")
+allele_freq[c('ref', 'ref_freq')] <- str_split_fixed(allele_freq$REF, ':', 2)
+allele_freq[c('var', 'var_freq')] <- str_split_fixed(allele_freq$VAR, ':', 2)
+allele_freq <- allele_freq[c("chrom", "POS", "alleles", "total_alleles", "ref", "ref_freq", "var", "var_freq")]
+allele_freq$var_freq <- as.numeric(allele_freq$var_freq)
+
+nuc_freq <- left_join(nuc, allele_freq, by = 'POS')
+
+#Plotting
+beta_tub_2_shceme <- ggplot() +
+  geom_rect(data=introns, aes(xmin=start,ymin=-0.05, xmax=end, ymax=0.05), fill="grey50") +
+  geom_rect(data=exons, aes(xmin=start,ymin=-0.15, xmax=end, ymax=0.15), fill="grey90") +
+  ylim(-0.2,1) +
+  labs(x="Genomic position (bp)", y="Nucleotide diversity (pi)", color="Variant frequency") +
+  geom_segment(data=resistant_snps, aes(x=pos, xend=pos, y=-0.15, yend=0.15),col="red", size=1) +
+  geom_text_repel(data=resistant_snps, aes(x=pos, y=0, label=name), col="red", box.padding = 0.5, max.overlaps = Inf, nudge_y = 0.75) +
+  geom_segment(data=nuc_freq, aes(x=POS, xend=POS, y=0, yend=PI, col=var_freq), size=1) +
+  geom_point(data=nuc_freq, aes(x=POS, y=PI, col=var_freq), size=3) +
+  theme_bw() + scale_colour_viridis()  + scale_fill_viridis()
 
 
+#Genome wide diversity
+data <- read.table("beta_tub_2/trichuris_allsites_pi.txt", header=T)
 
+chr <- filter(data,chromosome=="Trichuris_trichiura_2_001")
+chr <- mutate(chr, colour = ifelse( window_pos_1>=27460001 & window_pos_1<27480001, "1", "0.5"))
+chr <- chr %>%
+  group_by(pop) %>%
+  dplyr::mutate(position = 1:n())
+#And plot
+plot_1 <- ggplot(chr, aes(position*20000, avg_pi, col=colour, size=colour)) +
+  geom_point() +
+  facet_grid(pop~.) +
+  geom_vline(xintercept=c(27478327,27481371), linetype="dashed", size=0.5) +
+  labs(x = "Genomic position (bp)" , y = "Nucleotide diversity") +
+  scale_colour_manual(values = c("grey", "brown1")) +
+  scale_size_manual(values=c("0.5" = 0.5, "1" = 2)) +
+  theme_bw() + theme(legend.position="none")
+# rearrange Pi data to determine where btubulin sits in the distribution of pi
+chr_sort <- arrange(chr,avg_pi)
+chr_sort <-
+  chr_sort %>%
+  group_by(pop) %>%
+  dplyr::mutate(position = 1:n())
+chr_sort_quantile <-
+  chr_sort %>%
+  group_by(pop) %>%
+  dplyr::summarise(enframe(quantile(avg_pi, c(0.05,0.95)), "quantile", "avg_pi"))
+#And plot
+plot_2 <- ggplot(chr_sort) +
+  geom_hline(data=chr_sort_quantile,aes(yintercept=c(avg_pi)), linetype="dashed", size=0.5) +
+  geom_point(aes(position, avg_pi, col=colour, size=colour)) + facet_grid(pop~.) + theme_bw() +
+  scale_colour_manual(values = c("grey", "brown1")) +
+  labs(x = "Position sorted by Pi" , y = "Nucleotide diversity") +
+  scale_size_manual(values=c("0.5" = 0.5, "1" = 2)) +
+  theme(legend.position="none",
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
 
+gw_beta_tub_2 <- plot_1 + plot_2
+```
 
 
 
