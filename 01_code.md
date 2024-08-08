@@ -201,6 +201,19 @@ grenedalf diversity \
 ### First, the plots for coverage and variant freq are prapred
 
 ```R
+library(tidyverse)
+library(ggsci)
+library(patchwork)
+library(viridis)
+library(ggrepel)
+library(gcookbook)
+library(janitor)
+library(tidyverse)
+library(ggpubr)
+library(ggridges)
+library(scales)
+library(readxl)
+
 #setting WD
 setwd("~/R/DEEP_amp_seq")
 
@@ -310,19 +323,6 @@ plot_freq <- ggplot() +
 ### And now, we continue with analysing the nuc. diversity
 
 ```R
-library(tidyverse)
-library(ggsci)
-library(patchwork)
-library(viridis)
-library(ggrepel)
-library(gcookbook)
-library(janitor)
-library(tidyverse)
-library(ggpubr)
-library(ggridges)
-library(scales)
-library(readxl)
-
 #Let's add metadata to explore diversity, EPG and Ct values
 irsi_amp <- read_excel("databases/irsi_amp_mod.xlsx") #this metadata contains partitipant information and it is not public
 
@@ -460,10 +460,15 @@ boxplot_div <- ggplot(as_tibble(per_sample_div), aes(x=point, y=div, fill = poin
   annotate("text", x = 1.5, y = 0.01, col = 'grey32',size = 3,
            label = "p = 0.914") +
   theme_bw() + theme(legend.position = "none")
+```
 
-#Let's get some information about the participants and the infection (to feed Table 1)
+### Amd now I get some partitipant data and infection intensity
+This infroamtion is used to create table 1
+
+```R
 library(haven)
 part_data <- read_dta("databases/data_for_Javier_with_ages_OM_VN_01JUL2024.dta") #this mnetadata is not public
+
 #Now get uniq study numbers from irsiamp database
 part_data_table <- irsi_amp[!duplicated(irsi_amp$n_estudo), ] %>%
   select(n_estudo, pre_post) %>%
