@@ -974,6 +974,21 @@ plot_2 <- ggplot(chr_sort) +
 gw_beta_tub_2 <- plot_1 + plot_2
 ```
 
+## Finally the fidures are arrange for publication
 
-
+```R
+library(ggpubr)
+#Fig1
+p1 <- ggarrange(plot_cov, plot_freq, labels = c('A', 'B'), nrow = 2, common.legend = T)
+p2 <- ggarrange(div_vs_epg, div_vs_ct, boxplot_div, labels = c('C', 'D', 'E'), common.legend = T, nrow = 1, legend = 'top')
+ggarrange(p1, p2, ncol = 1, heights = c(1, 0.7))
+ggsave('Figures/Fig1_btub1.jpg', width = 8.8, height = 8)
+ggsave('Figures/Fig1_btub1.tiff', width = 8.8, height = 8)
+ggsave('Figures/Fig1_btub1.pdf', width = 8.8, height = 8)
+#Fig2
+ggarrange(beta_tub_2_shceme, gw_beta_tub_2, labels = c('A', 'B'), ncol = 1, heights = c(1, 1.5))
+ggsave('Figures/Fig2_btub2.jpg', width = 10, height = 8)
+ggsave('Figures/Fig2_btub2.tiff', width = 10, height = 8)
+ggsave('Figures/Fig2_btub2.pdf', width = 10, height = 8)
+```
 
