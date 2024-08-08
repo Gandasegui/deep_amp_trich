@@ -462,8 +462,7 @@ boxplot_div <- ggplot(as_tibble(per_sample_div), aes(x=point, y=div, fill = poin
   theme_bw() + theme(legend.position = "none")
 ```
 
-### Amd now I get some partitipant data and infection intensity
-This infroamtion is used to create table 1
+## Now, I get some partitipant data and infection intensity to create Table 1
 
 ```R
 library(haven)
@@ -660,7 +659,7 @@ vcftools \
 --out deep_amp_tri_genome.filtered
 ```
 
-## And now we run SnpEff
+### And now we run SnpEff
 
 ```bash
 #SNPeff
@@ -771,7 +770,7 @@ snpEff -v -onlyProtein trichuris grenedalf_snps_10.renamed.vcf > grenedalf_snps_
 snpEff -v -onlyTr my_transcripts.txt trichuris grenedalf_snps_10.renamed.vcf > grenedalf_snps_10.ann.trans.vcf
 #same result, still don't know the meaning
 ```
-### Now, Table S3 is generatet 
+### Now, Table S3 is generated with SnpEff information 
 
 ```
 #Let's generate table S3 with the SNPeff info
@@ -902,7 +901,7 @@ vcftools \
 #> After filtering, kept 205 out of a possible 6933531 Sites
 ```
 
-### And now is R the the informaiton is visuallised
+### And now the informaiton is visuallised in R
 
 ```R
 # the location and gene data is loaded
