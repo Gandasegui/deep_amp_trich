@@ -13,6 +13,7 @@ output file: md document
 #Creating working directory
 mkdir /lustre/scratch125/pam/teams/team333/jg34/DEEP_AMP_TRI
 cd /lustre/scratch125/pam/teams/team333/jg34/DEEP_AMP_TRI
+WORKING_DIR=/lustre/scratch125/pam/teams/team333/jg34/DEEP_AMP_TRI
 
 #And working enviroment
 mkdir 01_REF 02_RAW 03_MAP
@@ -97,6 +98,119 @@ mapping-helminth --input deep_amp_manifest.csv --reference /lustre/scratch125/pa
 6-16-HEL
 6-9-HEL
 ```
+
+## Let's check the position of the amplicon of the beta tubuline in the new genome
+
+```bash
+cd ${WORKING_DIR}/01_REF/
+module load mummer4/4.0.0rc1
+module load bedtools/2.31.0--hf5e1c6e_3
+module load samtools
+
+#From mapping, I know that the reads went to the 95_trichuris_trichiura chr
+#Let's narrow the annealong to that chr in order to avoid unespecific matches
+samtools faidx ${REF_DIR}/trichuris_trichiura.renamed.fa 95_trichuris_trichiura > 95_trichuris_trichiura.fa
+
+#Let's see waht we found
+#Download the gen from NCBI Gen BAnl Accs no.: AF034219.1 - dowload fasta and renamed to Trichuris-beta-tub.fa
+nucmer -c 100 -p nucmer ${WORKING_DIR}/01_REF/95_trichuris_trichiura.fa ${WORKING_DIR}/01_REF/Trichuris-beta-tub.fa
+show-coords -r -c -l nucmer.delta > nucmer.coords
+cat nucmer.coords
+
+"NUCMER
+
+    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
+===============================================================================================================================
+10684111 10686714  |     2608        1  |     2604     2608  |    99.31  | 11299416     2611  |     0.02    99.89  | 95_trichuris_trichiura     Trichuris-beta-tub"
+
+#Let's generate a bed tool with the coordinates from the exons and introns from a nucmer coordinates
+#First we get the sequences of the exons from ncbi and generate a fasta file named beta_tub_exons.fa
+#We have prepared a single line fasta with the ionformation we have in NCBI, let's preapre a multilne fasta
+fold -b -w 60 beta_tub_exons.fa > beta_tub_exons_folded.fa
+nucmer -c 100 -p beta_tub_exons ${WORKING_DIR}/01_REF/95_trichuris_trichiura.fa ${WORKING_DIR}/01_REF/beta_tub_exons_folded.fa
+show-coords -r -c -l beta_tub_exons.delta > beta_tub_exons.coords
+
+"NUCMER
+
+    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
+===============================================================================================================================
+10684167 10684696  |      530        1  |      530      530  |    99.25  | 11299416      530  |     0.00   100.00  | 95_trichuris_trichiura     EXON6
+10684751 10684937  |      187        1  |      187      187  |   100.00  | 11299416      187  |     0.00   100.00  | 95_trichuris_trichiura     EXON5
+10684987 10685436  |      450        1  |      450      450  |    99.78  | 11299416      450  |     0.00   100.00  | 95_trichuris_trichiura     EXON4
+10685483 10685727  |      245        1  |      245      245  |    99.18  | 11299416      245  |     0.00   100.00  | 95_trichuris_trichiura     EXON3
+10685780 10685999  |      220        1  |      220      220  |   100.00  | 11299416      220  |     0.00   100.00  | 95_trichuris_trichiura     EXON2
+10686294 10686647  |      355        1  |      354      355  |    99.44  | 11299416      355  |     0.00   100.00  | 95_trichuris_trichiura     EXON1"
+
+#Now, we conver this to bed format
+awk -F '|' '!/^=/{gsub(/^[ \t]+|[ \t]+$/, "", $0); split($1, coords, " +"); split($15, tags, " +"); print tags[1] "\t" coords[1] "\t" coords[2] "\t" tags[2] "\t0\t+"}' beta_tub_exons.coords > beta_tub_exons_folded.bed
+#And some brief modification in nano
+#Now we use that file to obtain the introns
+samtools faidx 95_trichuris_trichiura.fa
+cut -f 1,2 95_trichuris_trichiura.fa.fai > 95_trichuris_trichiura.genome.bed
+bedtools complement -i beta_tub_exons_folded.bed -g 95_trichuris_trichiura.genome.bed > beta_tub_introns.bed
+#And some nano modifications to get only the amplicon based on Trichuris-beta-tub.fa sequence
+```
+
+
+## Estimating coverage and variant frequency using grenedalf
+Grenedalf is specifically designed to analyse pools of individuals
+
+```bash
+#Let's created the folder
+mkdir ${WORKING_DIR}/05_DIV/
+mkdir ${WORKING_DIR}/05_DIV/grenedalf
+cd ${WORKING_DIR}/05_DIV/grenedalf
+
+#Let's generate the enviromentla variables
+BAM_LIST=${WORKING_DIR}/04_VARIANTS/bam.list #this include the mapped files
+REFERENCE=${WORKING_DIR}/01_REF/trichuris_trichiura.renamed.fa
+
+
+#Loading the modules
+module load grenedalf/0.3.0
+module load samtools/1.9--h91753b0_8
+
+#Let's select those SNPs in the chr of interest (95_trichuris_trichiura) - some reads went to other chr, so they were not specific
+mkdir bam_files_chr
+
+while read BAM; do \
+SAMPLE=$( echo ${BAM} | awk -F '/' '{print $NF}' | sed -e 's/.bam//g' )
+samtools index ${BAM}
+samtools view -b -h ${BAM} "95_trichuris_trichiura" > bam_files_chr/${SAMPLE}.chr.bam;
+done < ${BAM_LIST}
+
+#Let's estimate the variant frequency
+mkdir freq
+grenedalf frequency \
+--sam-path bam_files_chr/ --write-sample-counts --write-sample-coverage --write-sample-ref-freq --out-dir freq/ \
+--file-prefix per_sample
+
+#Now per sample and per site diversity
+mkdir div
+grenedalf diversity \
+--sam-path bam_files_chr/ \
+--filter-sample-min-count 100 --window-type single --out-dir div/ --pool-sizes 10 \
+--measure theta-pi --file-prefix per_sample
+
+grenedalf diversity \
+--sam-path bam_files_chr/ \
+--filter-sample-min-count 10 --window-type genome --out-dir div/ --pool-sizes 10 \
+--filter-region-bed beta_tub.bed --measure theta-pi --file-prefix per_sample_total
+```
+
+
+################################################################################################################################################################
+
+
+
+
+
+
+
+
+
+
+
 
 ################################################################################################################################################################
 
@@ -187,54 +301,7 @@ vcftools \
 
 ################################################################################################################################################################
 
-#Let's check the position of the amplicon of the beta tubuline in the new genome
-cd ${WORKING_DIR}/01_REF/
-module load mummer4/4.0.0rc1
-module load bedtools/2.31.0--hf5e1c6e_3
-module load samtools
 
-#From mapping, I know that the reads went to the 95_trichuris_trichiura chr
-#Let's narrow the annealong to that chr in order to avoid unespecific matches
-samtools faidx ${REF_DIR}/trichuris_trichiura.renamed.fa 95_trichuris_trichiura > 95_trichuris_trichiura.fa
-
-#Let's see waht we found
-#Download the gen from NCBI Gen BAnl Accs no.: AF034219.1 - dowload fasta and renamed to Trichuris-beta-tub.fa
-nucmer -c 100 -p nucmer ${WORKING_DIR}/01_REF/95_trichuris_trichiura.fa ${WORKING_DIR}/01_REF/Trichuris-beta-tub.fa
-show-coords -r -c -l nucmer.delta > nucmer.coords
-cat nucmer.coords
-
-"NUCMER
-
-    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
-===============================================================================================================================
-10684111 10686714  |     2608        1  |     2604     2608  |    99.31  | 11299416     2611  |     0.02    99.89  | 95_trichuris_trichiura     Trichuris-beta-tub"
-
-#Let's generate a bed tool with the coordinates from the exons and introns from a nucmer coordinates
-#First we get the sequences of the exons from ncbi and generate a fasta file named beta_tub_exons.fa
-#We have prepared a single line fasta with the ionformation we have in NCBI, let's preapre a multilne fasta
-fold -b -w 60 beta_tub_exons.fa > beta_tub_exons_folded.fa
-nucmer -c 100 -p beta_tub_exons ${WORKING_DIR}/01_REF/95_trichuris_trichiura.fa ${WORKING_DIR}/01_REF/beta_tub_exons_folded.fa
-show-coords -r -c -l beta_tub_exons.delta > beta_tub_exons.coords
-
-"NUCMER
-
-    [S1]     [E1]  |     [S2]     [E2]  |  [LEN 1]  [LEN 2]  |  [% IDY]  |  [LEN R]  [LEN Q]  |  [COV R]  [COV Q]  | [TAGS]
-===============================================================================================================================
-10684167 10684696  |      530        1  |      530      530  |    99.25  | 11299416      530  |     0.00   100.00  | 95_trichuris_trichiura     EXON6
-10684751 10684937  |      187        1  |      187      187  |   100.00  | 11299416      187  |     0.00   100.00  | 95_trichuris_trichiura     EXON5
-10684987 10685436  |      450        1  |      450      450  |    99.78  | 11299416      450  |     0.00   100.00  | 95_trichuris_trichiura     EXON4
-10685483 10685727  |      245        1  |      245      245  |    99.18  | 11299416      245  |     0.00   100.00  | 95_trichuris_trichiura     EXON3
-10685780 10685999  |      220        1  |      220      220  |   100.00  | 11299416      220  |     0.00   100.00  | 95_trichuris_trichiura     EXON2
-10686294 10686647  |      355        1  |      354      355  |    99.44  | 11299416      355  |     0.00   100.00  | 95_trichuris_trichiura     EXON1"
-
-#Now, we conver this to bed format
-awk -F '|' '!/^=/{gsub(/^[ \t]+|[ \t]+$/, "", $0); split($1, coords, " +"); split($15, tags, " +"); print tags[1] "\t" coords[1] "\t" coords[2] "\t" tags[2] "\t0\t+"}' beta_tub_exons.coords > beta_tub_exons_folded.bed
-#And some brief modification in nano
-#Now we use that file to obtain the introns
-samtools faidx 95_trichuris_trichiura.fa
-cut -f 1,2 95_trichuris_trichiura.fa.fai > 95_trichuris_trichiura.genome.bed
-bedtools complement -i beta_tub_exons_folded.bed -g 95_trichuris_trichiura.genome.bed > beta_tub_introns.bed
-#And some nano modifications to get only the amplicon based on Trichuris-beta-tub.fa sequence
 
 #############
 
@@ -246,47 +313,7 @@ module load vcftools/0.1.16-c4
 
 ################################################################################################################################################################
 
-#Let's estimaete variant freq and diversity using a tool for pooled individulas named grenedalf
-mkdir ${WORKING_DIR}/05_DIV/grenedalf
-cd ${WORKING_DIR}/05_DIV/grenedalf
 
-#Let's generate again the enviromentla variables
-BAM_LIST=${WORKING_DIR}/04_VARIANTS/bam.list
-REFERENCE=${WORKING_DIR}/01_REF/trichuris_trichiura.renamed.fa
-WORKING_DIR=/lustre/scratch125/pam/teams/team333/jg34/DEEP_AMP_TRI
-
-#Loading the module
-module load grenedalf/0.3.0
-module load samtools/1.9--h91753b0_8
-
-#Let's select those SNPs in the chr of interest (95_trichuris_trichiura) - some reads went to other chr, so they were not specific
-mkdir bam_files_chr
-
-while read BAM; do \
-SAMPLE=$( echo ${BAM} | awk -F '/' '{print $NF}' | sed -e 's/.bam//g' )
-samtools index ${BAM}
-samtools view -b -h ${BAM} "95_trichuris_trichiura" > bam_files_chr/${SAMPLE}.chr.bam;
-done < ${BAM_LIST}
-
-#Let's estimate the variant frequency
-mkdir freq
-grenedalf frequency \
---sam-path bam_files_chr/ --write-sample-counts --write-sample-coverage --write-sample-ref-freq --out-dir freq/ \
---file-prefix per_sample
-
-#Now per sample and per site diversity
-mkdir div
-grenedalf diversity \
---sam-path bam_files_chr/ \
---filter-sample-min-count 100 --window-type single --out-dir div/ --pool-sizes 10 \
---measure theta-pi --file-prefix per_sample
-
-grenedalf diversity \
---sam-path bam_files_chr/ \
---filter-sample-min-count 10 --window-type genome --out-dir div/ --pool-sizes 10 \
---filter-region-bed beta_tub.bed --measure theta-pi --file-prefix per_sample_total
-
-################################################################################################################################################################
 
 #Let's see what is going on with the second beta tub
 mkdir ${WORKING_DIR}/06_BETA_2
