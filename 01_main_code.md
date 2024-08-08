@@ -6,7 +6,8 @@ raw data: SRA BioProject ID PRJNA1145892
 output file: md document
 ---
 
-# Code used to perform the analysis
+# Main code
+
 ## Creating working environment
 
 ```bash
@@ -151,7 +152,6 @@ bedtools complement -i beta_tub_exons_folded.bed -g 95_trichuris_trichiura.genom
 #And some nano modifications to get only the amplicon based on Trichuris-beta-tub.fa sequence
 ```
 
-
 ## Estimating coverage and variant frequency using grenedalf
 Grenedalf is specifically designed to analyse pools of individuals
 
@@ -197,6 +197,376 @@ grenedalf diversity \
 --filter-sample-min-count 10 --window-type genome --out-dir div/ --pool-sizes 10 \
 --filter-region-bed beta_tub.bed --measure theta-pi --file-prefix per_sample_total
 ```
+## Now, we use the output files to generate some plots and perform some analysys in R
+### First, the plots for coverage and variant freq are prapred
+
+```R
+#setting WD
+setwd("~/R/DEEP_amp_seq")
+
+#Let's plot the beta tubuline scheme alongised the coverage and variant freq
+#Let's generate a scheme of the beta tubuline
+exons <- read.table("beta_tub_var/beta_tub_exons_folded.bed", header=F)
+colnames(exons) <- c("chrom", "start", "end")
+
+introns <- read.table("beta_tub_var/beta_tub_introns.bed", header=F)
+colnames(introns) <- c("chrom", "start", "end")
+
+resistant_snps <- read.table("beta_tub_var/btubulin.canonicalresistantSNPs.bed",header=T)
+
+#Let's explore COV and SNP frequencies
+per_samplefrequency <- read_csv("grenedalf/per_samplefrequency.csv")
+#Let's write a csv for supp material
+freq_to_csv <- per_samplefrequency
+colnames(freq_to_csv) <- str_remove(colnames(freq_to_csv), '.chr.1')
+colnames(freq_to_csv) <- str_replace(colnames(freq_to_csv), 'REF_CNT', 'ref_read_count')
+colnames(freq_to_csv) <- str_replace(colnames(freq_to_csv), 'ALT_CNT', 'alt_read_count')
+colnames(freq_to_csv) <- str_replace(colnames(freq_to_csv), 'COV', 'coverage')
+colnames(freq_to_csv) <- str_replace(colnames(freq_to_csv), 'FREQ', 'ref_freq')
+write_csv(freq_to_csv, 'Table_S2.csv')
+
+#Let's estimate pre and post coverage per position
+cov_pre <- per_samplefrequency %>%
+  select(POS, contains('COV')) %>%
+  mutate(., pre_cov_mean = rowMeans(select(., contains("4-")), na.rm = TRUE))
+
+cov_pre_post <- cov_pre %>%
+  select(contains('COV')) %>%
+  mutate(., post_cov_mean = rowMeans(select(., !contains("4-")), na.rm = TRUE)) %>%
+  select(post_cov_mean) %>%
+  cbind(cov_pre, .)
+
+cov_pre_post_all <- cov_pre %>%
+  select(contains('COV')) %>%
+  mutate(., all_cov_mean = rowMeans(.,na.rm = TRUE)) %>%
+  select(all_cov_mean) %>%
+  cbind(cov_pre_post, .)
+
+#And plot
+cov_to_plot <- cov_pre_post_all %>%
+  select(POS, pre_cov_mean, post_cov_mean) %>%
+  tidyr::gather(., point, coverage, -POS)
+
+cov_to_plot$point <- str_replace(cov_to_plot$point, "pre_cov_mean", "Pre-treatment")
+cov_to_plot$point <- str_replace(cov_to_plot$point, "post_cov_mean", "Post-treatment")
+cov_to_plot$point <- factor(cov_to_plot$point, levels=c("Pre-treatment", "Post-treatment"))
+
+plot_cov  <- ggplot() +
+  geom_rect(data=introns, aes(xmin=start,ymin=-220, xmax=end, ymax=220), fill="grey50") +
+  geom_rect(data=exons, aes(xmin=start,ymin=-1450, xmax=end, ymax=1450), fill="grey90") +
+  #geom_segment(data=resistant_snps, aes(x=pos, xend=pos, y=-1450, yend=1450),col="red", size=1) +
+  #geom_text_repel(data=resistant_snps, aes(x=pos, y=0, label=name), col="red", box.padding = 0.5, max.overlaps = Inf, nudge_y = 5000) +
+  geom_line(data =cov_to_plot, aes(x=POS, y = coverage, col = point), size=1, alpha=0.5) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  xlim(10684100, 10686800) +
+  scale_color_discrete(name = " ") +
+  scale_y_continuous(labels = label_number(accuracy = 1)) +
+  ylab("Covegare") + xlab("Position")
+
+#Let's estimate pre and post SNP freq
+freq_pre <- per_samplefrequency %>%
+  select(POS, contains('FREQ')) %>%
+  mutate(., pre_freq_mean = rowMeans(select(., contains("4-")), na.rm = TRUE))
+
+freq_pre_post <- freq_pre %>%
+  select(contains('FREQ')) %>%
+  mutate(., post_freq_mean = rowMeans(select(., !contains("4-")), na.rm = TRUE)) %>%
+  select(post_freq_mean) %>%
+  cbind(freq_pre, .)
+
+freq_pre_post_all <- freq_pre %>%
+  select(contains('FREQ')) %>%
+  mutate(., all_freq_mean = rowMeans(.,na.rm = TRUE)) %>%
+  select(all_freq_mean) %>%
+  cbind(freq_pre_post, .)
+
+#And plot
+freq_to_plot <- freq_pre_post_all %>%
+  select(POS, pre_freq_mean, post_freq_mean) %>%
+  tidyr::gather(., point, frequency, -POS)
+
+freq_to_plot_freq <- as_tibble(sapply(freq_to_plot$frequency, function(x) if(is.numeric(x)) 1-x else ""))
+freq_to_plot <- cbind(select(freq_to_plot, POS, point), freq_to_plot_freq)
+
+freq_to_plot$point <- str_replace(cov_to_plot$point, "pre_freq_mean", "Pre-treatment")
+freq_to_plot$point <- str_replace(cov_to_plot$point, "post_freq_mean", "Post-treatment")
+freq_to_plot$point <- factor(freq_to_plot$point, levels=c("Pre-treatment", "Post-treatment"))
+
+plot_freq <- ggplot() +
+  geom_rect(data=introns, aes(xmin=start,ymin=-0.015, xmax=end, ymax=0.015), fill="grey50") +
+  geom_rect(data=exons, aes(xmin=start,ymin=-0.10, xmax=end, ymax=0.10), fill="grey90") +
+  geom_segment(data=resistant_snps, aes(x=pos, xend=pos, y=-0.10, yend=0.10),col="red", size=1) +
+  geom_text_repel(data=resistant_snps, aes(x=pos, y=0, label=name), col="red", box.padding = 0.5, max.overlaps = Inf, nudge_y = 0.5) +
+  geom_line(data=freq_to_plot, aes(x=POS, y = value, col = point), size=1, alpha=0.5) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  xlim(10684100, 10686800) +
+  scale_color_discrete(name = " ") +
+  ylab("Variant frequency") + xlab("Position")  +
+  scale_y_continuous(labels = label_number(accuracy = 0.001))
+```
+
+### And now, we continue with analysing the nuc. diversity
+
+```R
+library(tidyverse)
+library(ggsci)
+library(patchwork)
+library(viridis)
+library(ggrepel)
+library(gcookbook)
+library(janitor)
+library(tidyverse)
+library(ggpubr)
+library(ggridges)
+library(scales)
+library(readxl)
+
+#Let's add metadata to explore diversity, EPG and Ct values
+irsi_amp <- read_excel("databases/irsi_amp_mod.xlsx") #this metadata contains partitipant information and it is not public
+
+#let's add the egg count data per sample to get the plots of pi and hapo vs eggs
+stool_data_1 <- read_excel("databases/MARS_bases_de_dados_resultados_V0V1V2_Urina_e_Fezes_V4V6_Fezes_08.04.2020.xlsx",
+                           sheet = "MARS-1_v0v1v2v4v6") #same here
+
+stool_data_2 <- read_excel("databases/MARS_bases_de_dados_resultados_V0V1V2_Urina_e_Fezes_V4V6_Fezes_08.04.2020.xlsx",
+                           sheet = "MARS-2_v0v1v2v4v6") #and here
+
+stool_data <- rbind(stool_data_1, stool_data_2)
+
+egg_count_v4 <- irsi_amp %>% filter(pre_post == 'pre') %>%
+  left_join(., stool_data, by = c('nida' = 'NIDA_V4')) %>%
+  select("n_estudo","nida","code","pre_post",
+         "triplex_tri","micro_tri","PCR_pyro","167",             
+         "198","200", "tri_kk1_v4_ovos", "tri_kk2_v4_ovos",
+         "tri_kk3_v4_ovos", "tri_kk4_v4_ovos")
+colnames(egg_count_v4) <- str_remove(colnames(egg_count_v4), 'v4_')
+
+egg_count_v6 <- irsi_amp %>% filter(pre_post == 'post') %>%
+  left_join(., stool_data, by = c('nida' = 'NIDA_V6')) %>%
+  select("n_estudo","nida","code","pre_post",
+         "triplex_tri","micro_tri","PCR_pyro","167",             
+         "198","200", "tri_kk1_v6_ovos", "tri_kk2_v6_ovos",
+         "tri_kk3_v6_ovos", "tri_kk4_v6_ovos")
+colnames(egg_count_v6) <- str_remove(colnames(egg_count_v4), 'v6_')
+
+egg_count <- rbind(egg_count_v4, egg_count_v6)
+
+egg_count$tri_kk1_ovos <- as.numeric(egg_count$tri_kk1_ovos)
+egg_count$tri_kk2_ovos <- as.numeric(egg_count$tri_kk2_ovos)
+egg_count$tri_kk3_ovos <- as.numeric(egg_count$tri_kk3_ovos)
+egg_count$tri_kk4_ovos <- as.numeric(egg_count$tri_kk4_ovos)
+
+egg_count <- egg_count %>%
+  mutate(epg = (tri_kk1_ovos + tri_kk2_ovos + tri_kk3_ovos + tri_kk4_ovos)/4*24)
+
+qPCR_egg_count <- read_excel("databases/MARS_PCR_all_1190_Leiden_V210104.xlsx") %>%
+  select(pin, ct_tt, pcr_tt) %>%
+  left_join(egg_count, .,  by = c('nida' = 'pin'))
+
+#Let's see diversity and intensity of infection
+#Let's load per sample diversity obtained in Grenedalf
+per_sample_total_div <- read_csv("grenedalf/per_sample_totaldiversity.csv")
+
+df2 <- data.frame(t(select(per_sample_total_div, contains('pi_rel'))[]))
+colnames(df2) <- per_sample_total_div[, 1]
+per_sample_div <- rownames_to_column(df2, var = 'sample')
+per_sample_div$point <- ifelse(grepl("4-", per_sample_div$sample), "Pre-treatment", "Post-treatment")
+colnames(per_sample_div) <- c('sample', 'div', 'point')
+per_sample_div$point <- factor(per_sample_div$point, levels=c("Pre-treatment", "Post-treatment"))
+
+
+per_sample_div$sample <- str_remove(per_sample_div$sample, '-HEL.chr.1.theta_pi_rel')
+qPCR_egg_count$ct_tt <- as.numeric(qPCR_egg_count$ct_tt)
+
+qPCR_egg_count$pre_post <- str_replace(qPCR_egg_count$pre_post, "pre", "Pre-treatment")
+qPCR_egg_count$pre_post <- str_replace(qPCR_egg_count$pre_post, "post", "Post-treatment")
+qPCR_egg_count$pre_post <- factor(qPCR_egg_count$pre_post, levels=c("Pre-treatment", "Post-treatment"))
+
+coor <- qPCR_egg_count %>%
+  select(code, epg, ct_tt, pre_post) %>%
+  filter(epg > 0) %>%
+  left_join(per_sample_div, ., by = c('sample' = 'code')) %>%
+  select(div, epg, ct_tt)
+
+cor.test(coor$div, coor$epg, method=c('spearman'))
+cor.test(coor$div, coor$ct_tt, method=c('spearman'))
+
+div_vs_epg <- qPCR_egg_count %>%
+  select(code, epg, ct_tt, pre_post) %>%
+  left_join(per_sample_div, ., by = c('sample' = 'code')) %>%
+  ggplot(aes(x=log(epg), y=div, col = pre_post)) +
+  geom_point(size = 3) +
+  #geom_smooth(method = lm, se = F, col= 'grey30', alpha = 0.6) +
+  annotate("text", x = 6.9, y = 0.0048, col = 'grey32',size = 3,
+           label = "rho = 0.39, p = 0.036") +
+  scale_color_discrete(name = " ") +
+  scale_color_discrete(name = " ") +
+  labs(x = "Log(epg)" , y = "Nucleotide diversity (Pi)") +
+  theme_bw()
+
+div_vs_ct <- qPCR_egg_count %>%
+  select(code, epg, ct_tt, pre_post) %>%
+  left_join(per_sample_div, ., by = c('sample' = 'code')) %>%
+  ggplot(aes(x=ct_tt, y=div, col = pre_post)) +
+  geom_point(size = 3) +
+  #geom_smooth(method = lm, se = F, col= 'grey30', alpha = 0.6) +
+  annotate("text", x = 31, y = 0.0048, col = 'grey32', size = 3,
+           label = "rho = -0.26, p = 0.172") +
+  scale_color_discrete(name = " ") +
+  labs(x = "Ct value" , y = "Nucleotide diversity (Pi)") +
+  theme_bw()
+
+#Let's find the paired samples
+qPCR_egg_count %>%
+  filter(pre_post == 'Pre-treatment') %>%
+  inner_join(., filter(qPCR_egg_count, pre_post == 'Post-treatment'), by = 'n_estudo') %>%
+  select(code.x, code.y) %>% print()
+
+#Pairs are:
+#4-12   6-20  
+#4-15   6-10  
+#4-19   6-12  
+#4-46   6-26  
+#4-54   6-39  
+#4-59   6-45
+
+per_sample_div$pair[per_sample_div$sample == '4-12'] <- 'a'
+per_sample_div$pair[per_sample_div$sample == '6-20'] <- 'a'
+
+per_sample_div$pair[per_sample_div$sample == '4-15'] <- 'b'
+per_sample_div$pair[per_sample_div$sample == '6-10'] <- 'b'
+
+per_sample_div$pair[per_sample_div$sample == '4-19'] <- 'c'
+per_sample_div$pair[per_sample_div$sample == '6-12'] <- 'c'
+
+per_sample_div$pair[per_sample_div$sample == '4-46'] <- 'd'
+per_sample_div$pair[per_sample_div$sample == '6-26'] <- 'd'
+
+per_sample_div$pair[per_sample_div$sample == '4-54'] <- 'e'
+per_sample_div$pair[per_sample_div$sample == '6-39'] <- 'e'
+
+per_sample_div$pair[per_sample_div$sample == '4-59'] <- 'f'
+per_sample_div$pair[per_sample_div$sample == '6-45'] <- 'f'
+
+#Let's see differences in per-sample diversity pre and post treatment
+boxplot_div <- ggplot(as_tibble(per_sample_div), aes(x=point, y=div, fill = point)) +
+  geom_boxplot(alpha=0.2) +
+  geom_point(aes(y=div, col = point)) +
+  geom_line(aes(group=pair), color = 'grey32') +
+  labs(y = "Nucleotide diversity (pi)", x = '', col = '') +
+  #ylim(0.002, 0.0125) +
+  annotate("text", x = 1.5, y = 0.01, col = 'grey32',size = 3,
+           label = "p = 0.914") +
+  theme_bw() + theme(legend.position = "none")
+
+#Let's get some information about the participants and the infection (to feed Table 1)
+library(haven)
+part_data <- read_dta("databases/data_for_Javier_with_ages_OM_VN_01JUL2024.dta") #this mnetadata is not public
+#Now get uniq study numbers from irsiamp database
+part_data_table <- irsi_amp[!duplicated(irsi_amp$n_estudo), ] %>%
+  select(n_estudo, pre_post) %>%
+  left_join(., part_data, by = c('n_estudo' = 'study_numer')) %>%
+  select(n_estudo, pre_post, age, SEXO, Posto_admistrativo) 
+
+part_data_table$pre_post[part_data_table$n_estudo == "0459" | part_data_table$n_estudo == "0481" |
+                          part_data_table$n_estudo == "0261" | part_data_table$n_estudo == "0603" |
+                          part_data_table$n_estudo == "0699" | part_data_table$n_estudo == "0295"] <- 'paired'
+
+part_data_table$SEXO <- tolower(part_data_table$SEXO)
+part_data_table$SEXO <- str_replace(part_data_table$SEXO, 'homem', 'Male')
+part_data_table$SEXO <- str_replace(part_data_table$SEXO, 'mulher', 'Female')
+
+part_data_table$Posto_admistrativo <- str_replace_all(str_to_title(tolower(part_data_table$Posto_admistrativo)), ' ', '_')
+part_data_table$Posto_admistrativo <- str_replace(part_data_table$Posto_admistrativo, '3_De_Fevreiro', '3_De_Fevereiro')
+
+library(tableone)
+colnames(part_data_table)
+listVars<-c("age","SEXO","Posto_admistrativo")
+catVars<-c("SEXO","Posto_admistrativo")
+table1<-CreateTableOne(data=part_data_table,vars=listVars,factorVars=catVars,
+                       addOverall=T,test=F,strata=c('pre_post'))
+
+#Now we have to estimate the KK mean and Ct-median for each value
+#KK
+overall <- qPCR_egg_count %>%
+  filter(epg > 0)
+nrow(overall)
+mean(overall$epg)
+range(overall$epg)
+
+pre_epg <- part_data_table %>%
+  filter(pre_post == 'pre') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo') %>%
+  filter(epg > 0)
+nrow(pre_epg)
+mean(pre_epg$epg)
+range(pre_epg$epg)
+
+post_epg <- part_data_table %>%
+  filter(pre_post == 'post') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo') %>%
+  filter(epg > 0)
+nrow(post_epg)
+mean(post_epg$epg)
+range(post_epg$epg)
+
+pair_pre_epg <- part_data_table %>%
+  filter(pre_post == 'paired') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo') %>%
+  filter(epg > 0) %>%
+  filter(pre_post.y == 'Pre-treatment')
+nrow(pair_pre_epg)
+mean(pair_pre_epg$epg)
+range(pair_pre_epg$epg)
+
+pair_post_epg <- part_data_table %>%
+  filter(pre_post == 'paired') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo') %>%
+  filter(epg > 0) %>%
+  filter(pre_post.y == 'Post-treatment')
+nrow(pair_post_epg)
+mean(pair_post_epg$epg)
+range(pair_post_epg$epg)
+
+#qPCR
+median(qPCR_egg_count$ct_tt)
+range(qPCR_egg_count$ct_tt)
+
+pre_ct <- part_data_table %>%
+  filter(pre_post == 'pre') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo')
+nrow(pre_ct)
+mean(pre_ct$ct_tt)
+range(pre_ct$ct_tt)
+
+post_ct <- part_data_table %>%
+  filter(pre_post == 'post') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo')
+nrow(post_ct)
+mean(post_ct$ct_tt)
+range(post_ct$ct_tt)
+
+pair_pre_ct <- part_data_table %>%
+  filter(pre_post == 'paired') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo') %>%
+  filter(pre_post.y == 'Pre-treatment')
+nrow(pair_pre_ct)
+mean(pair_pre_ct$ct_tt)
+range(pair_pre_ct$ct_tt)
+
+pair_post_ct <- part_data_table %>%
+  filter(pre_post == 'paired') %>%
+  left_join(., qPCR_egg_count, by = 'n_estudo') %>%
+  filter(pre_post.y == 'Post-treatment')
+nrow(pair_post_ct)
+mean(pair_post_ct$ct_tt)
+range(pair_post_ct$ct_tt)
+```
+
+
+################################################################################
 
 
 ################################################################################################################################################################
